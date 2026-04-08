@@ -1,3 +1,5 @@
+# STILL IN DEVELOPMENT DO NOT USE
+
 # Home-Assistant-http
 
 http component for Home Assistant to include banning by subnet which can be installed as a cutsom_component
