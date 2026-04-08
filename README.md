@@ -47,7 +47,7 @@ http:
 
 ```
 
-All functionality of the core http component are retained.
+All functionality of the core http component is retained.
 
 
 ## Installation
