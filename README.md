@@ -22,7 +22,7 @@ If you want to ban a range of IP addresses to reduce this, list the networks in 
 
 If you edit the banned networks list, you will need to restart Home Assistant for it to take effect
 
-By default, logging failed attempts to the log file and showing as Persistent Notifications are disabled. To enable either of these, use the `log_banned_networks` and `notify_banned_networks` flags.
+By default, logging failed attempts to the log file and showing as Persistent Notifications are enabled. To disable either of these, use the `log_banned_networks` and `notify_banned_networks` flags and set them to `False`.
 
 Banned IP log entries are `info` messages, so to see them the logger default, or for this integration, must be at `info` or lower. See the [logger](https://www.home-assistant.io/integrations/logger/) integration for more information.
 
