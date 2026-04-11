@@ -20,6 +20,8 @@ If you are plagued by these you can add the IP address or a range of IP addresse
 
 If you want to ban a range of IP addresses to reduce this, list the networks in `banned_networks`. To block `1.2.3.[0-255]` use the entry `1.2.3.0/24`. To block `1.2.[0-255].[0-255]` use `1.2.0.0/16`.
 
+It will not let you block the Home Assistant Supervisor (usually on network 10.x.x.x)
+
 If you edit the banned networks list, you will need to restart Home Assistant for it to take effect
 
 By default, logging failed attempts to the log file and showing as Persistent Notifications are enabled. To disable either of these, use the `log_banned_networks` and `notify_banned_networks` flags and set them to `False`.
