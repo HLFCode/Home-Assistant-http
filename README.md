@@ -37,13 +37,13 @@ Configuration should follow this format
 ```yaml
 # Example configuration.yaml entry
 http:
-  ip_ban_enabled: true
+  ip_ban_enabled: True # optional as defaults to True
   login_attempts_threshold: 5
-  banned_networks:
+  banned_networks: # Make sure the format is right, e.g. /16 must end in 0.0/16
     - 111.7.0.0/16
     - 45.0.0.0/8
-  log_banned_networks: true
-  notify_banned_networks: true
+  log_banned_networks: True # optional as defaults to True
+  notify_banned_networks: True # optional as defaults to True
 
 ```
 
