@@ -1,6 +1,8 @@
 # Home-Assistant-http
 
-http component for Home Assistant to include banning by subnet which can be installed as a cutsom_component
+Custom component for Home Assistant to augment the core http component functionality.
+
+This component adds the ability to ban groups of IP addresses by subnet
 
 ## Additions to core Home Assistant
 
