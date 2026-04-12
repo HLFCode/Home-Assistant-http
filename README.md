@@ -4,11 +4,15 @@ Custom component for Home Assistant to augment the core http component functiona
 
 This component adds the ability to ban groups of IP addresses by subnet
 
+# Notice
+
+I've just found out the HA core functionality of banning failed login attempts DOES NOT WORK - setting the threshold config flag does nothing.
+
 ## Additions to core Home Assistant
 
-The standard method of banning is for HA to log login attempts and ban after a number of failed attempts.
+The core http component checks for potentially harmful requests and can ban login credential failures
 
-All of this is retained in this custom component.
+The checks are retained in this custom component except the login failure banning does not currently work
 
 Lacking in this is the ability to ban bots which try to probe the HA file structure.
 
