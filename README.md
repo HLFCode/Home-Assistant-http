@@ -2,7 +2,7 @@
 
 Custom component for Home Assistant to augment the core http component functionality.
 
-This component adds the ability to ban groups of IP addresses by subnet
+This component adds the ability to ban groups of IP addresses by subnet or to ban everything but allow specific subnets access
 
 # Notice
 
@@ -14,7 +14,7 @@ The core http component checks for potentially harmful requests and can ban logi
 
 The checks are retained in this custom component except the login failure banning does not currently work
 
-Lacking in this is the ability to ban bots which try to probe the HA file structure.
+Lacking in this core functionality is the ability to ban bots which try to probe the HA file structure.
 
 HA reports these like this
 
@@ -40,7 +40,7 @@ logger:
   logs:
     homeassistant.components.http: info
 ```
-Configuration should follow this format
+Configuration using selective networks to be banned should follow this format
 
 ```yaml
 # Example configuration.yaml entry
@@ -52,18 +52,49 @@ http:
     - 45.0.0.0/8
   log_banned_networks: True # optional as defaults to True
   notify_banned_networks: True # optional as defaults to True
+  include_192_in_allowed_networks: True # optional as defaults to True
 
 ```
 
-All functionality of the core http component is retained.
+The opposite approach of banning the entire internet but allow specific subnets use this format
+
+```yaml
+# Example configuration.yaml entry
+http:
+  ip_ban_enabled: True # optional as defaults to True
+  login_attempts_threshold: 5
+  allowed_networks: # Make sure the format is right, e.g. /16 must end in 0.0/16
+    - 84.63.0.0/16 #Vodafone broadband
+    - 84.64.0.0/13 #Vodafone broadband
+    - 31.80.0.0/12 # EE Mobile
+    - 86.128.0.0/11 #BT broadband
+    - 86.160.0.0/12 #BT broadband
+  banned_networks: # Make sure the format is right, e.g. /16 must end in 0.0/16
+    - 0.0.0.0/1 # half of the internet
+    - 128.0.0.0/1 # the other half...
+  log_banned_networks: True # optional as defaults to True
+  notify_banned_networks: True # optional as defaults to True
+  include_192_in_allowed_networks: True # optional as defaults to True
+
+```
+
+It is impossible to ban the [rfc 1918](https://www.rfc-editor.org/rfc/rfc1918#:~:text=1996%0A%0A%0A3.-,Private%20Address%20Space,-The%20Internet%20Assigned) local subnets `10.0.0.0/8` and `172.16.0.0/12`.
+
+`192.168.0.0/16` is also not able to be banned by default unless you set the `include_192_in_allowed_networks` flag to False (for testing purposes)
+
+All functionality of the core http component is retained except the banning of login failures.
 
 
 ## Installation
 
-To use copy the http folder to the HA's config/custom_components folder and restart HA
+To use copy the http folder to the HA's config/custom_components folder and restart HA.
+
+After a successful start, edit the `configuration.yaml` to include the new features.
 
 ## Risks
 
 Home Assistant will not start if you update HA to a version which breaks this custom component replacement for http.
 
-To avoid being stuck set up smb/samba access to the config folder so you can remove this custom component from the config folder without needing Home Assistant to be running
+To avoid being stuck set up smb/samba access to the config folder so you can remove this custom component from the config folder without needing Home Assistant to be running.
+
+If you use the allowed_networks list and ban the entire internet you could lock youself out if your local access is not via the default `192.168.0.0/16` network or you set the `include_192_in_allowed_networks` flag to False so make sure uoi always have an allowed network you can access HA through
