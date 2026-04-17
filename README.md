@@ -97,4 +97,4 @@ Home Assistant will not start if you update HA to a version which breaks this cu
 
 To avoid being stuck set up smb/samba access to the config folder so you can remove this custom component from the config folder without needing Home Assistant to be running.
 
-If you use the allowed_networks list and ban the entire internet you could lock youself out if your local access is not via the default `192.168.0.0/16` network or you set the `include_192_in_allowed_networks` flag to False so make sure uoi always have an allowed network you can access HA through
+If you use the allowed_networks list and ban the entire internet you could lock youself out if your local access is not via the default `192.168.0.0/16` network or you set the `include_192_in_allowed_networks` flag to False so make sure you always have an allowed network you can access HA through
