@@ -69,9 +69,11 @@ def setup_bans(
     hass: HomeAssistant,
     app: Application,
     login_threshold: int,
+    allowed_networks: list[ip_network],
     banned_networks: list[ip_network],
     log_banned_networks: bool,
     notify_banned_networks: bool,
+    include_192_in_allowed_networks: bool,
 ) -> None:
     """Create IP Ban middleware for the app."""
     app.middlewares.append(ban_middleware)
@@ -82,7 +84,7 @@ def setup_bans(
     async def ban_startup(app: Application) -> None:
         """Initialize bans when app starts up."""
         await app[KEY_BAN_MANAGER].async_load(
-            banned_networks, log_banned_networks, notify_banned_networks
+            allowed_networks, banned_networks, log_banned_networks, notify_banned_networks, include_192_in_allowed_networks
         )
 
     app.on_startup.append(ban_startup)
@@ -93,46 +95,75 @@ async def ban_middleware(
     request: Request, handler: Callable[[Request], Awaitable[StreamResponse]]
 ) -> StreamResponse:
     """IP Ban middleware."""
+    """
+    NOTE
+    As this is a custom component the 'request' is linked in some way to the homeassistant.components.http
+    so this process_wrong_login will never get called
+    The login banning system seems not to be working when this component is used :-(
+    """
     # Unix socket connections are trusted, skip ban checks
     if is_supervisor_unix_socket_request(request):
         return await handler(request)
-
     if (ban_manager := request.app.get(KEY_BAN_MANAGER)) is None:
         _LOGGER.error("IP Ban middleware loaded but banned IPs not loaded")
         return await handler(request)
-
+    """
+    Process:
+    Get caller's ip address
+    if caller is already banned for login credential abuse
+        return forbidden - DOES NOT WORK as HA returns to core handler instead of this one
+    if caller is in allowed subnet
+        continue with request
+    else
+        if caller is in a banned subnet
+            return forbidden
+        else
+            continue with request
+    """
     ip_address_ = ip_address(request.remote)  # type: ignore[arg-type]
     if ip_bans_lookup := ban_manager.ip_bans_lookup:
         # Verify if IP is not banned
         if ip_address_ in ip_bans_lookup:
             raise HTTPForbidden
+    
+    # Check if ip address is in allowed list, if so don't check the banned list
+    caller_ip_allowed = False
+    if allowed_networks := ban_manager.allowed_networks:
+        for allowed_network in allowed_networks:
+            if ip_address_ in allowed_network:
+                _LOGGER.debug("Found %s in allowed network %s", ip_address_, allowed_network)
+                caller_ip_allowed = True
+                break
+    
     # Verify the whole subnet isn't banned
-    if banned_networks := ban_manager.banned_networks:
-        for banned_network in banned_networks:
-            if ip_address_ in banned_network:
-                if ban_manager.notify_bans or ban_manager.log_bans:
-                    hass = ban_manager.hass
-                    remote_host = request.remote
-                    with suppress(herror):
-                        remote_host, _, _ = await hass.async_add_executor_job(
-                            gethostbyaddr, request.remote
-                        )
+    if not caller_ip_allowed:
+        # ip address was not in allowed list so check banned list
+        if banned_networks := ban_manager.banned_networks:
+            for banned_network in banned_networks:
+                if ip_address_ in banned_network:
+                    if ban_manager.notify_bans or ban_manager.log_bans:
+                        hass = ban_manager.hass
+                        remote_host = request.remote
+                        with suppress(herror):
+                            remote_host, _, _ = await hass.async_add_executor_job(
+                                gethostbyaddr, request.remote
+                            )
 
-                    base_msg = f"Prevented access attempt from {remote_host} ({ip_address_}) which is in banned network {banned_network}"
-                    if ban_manager.notify_bans:
-                        # Circular import with websocket_api
-                        # pylint: disable=import-outside-toplevel
-                        from homeassistant.components import persistent_notification
+                        base_msg = f"Prevented access attempt from {remote_host} ({ip_address_}) which is in banned network {banned_network}"
+                        if ban_manager.notify_bans:
+                            # Circular import with websocket_api
+                            # pylint: disable=import-outside-toplevel
+                            from homeassistant.components import persistent_notification
 
-                        persistent_notification.async_create(
-                            hass,
-                            f"{base_msg}, see log for details",
-                            "IP address blocked",
-                            NOTIFICATION_ID_BAN,
-                        )
-                    if ban_manager.log_bans:
-                        _LOGGER.warning(base_msg)
-                raise HTTPForbidden
+                            persistent_notification.async_create(
+                                hass,
+                                f"{base_msg}, see log for details",
+                                "IP address blocked",
+                                NOTIFICATION_ID_BAN,
+                            )
+                        if ban_manager.log_bans:
+                            _LOGGER.warning(base_msg)
+                    raise HTTPForbidden
     try:
         return await handler(request)
     except HTTPUnauthorized:
@@ -192,7 +223,6 @@ async def process_wrong_login(request: Request) -> None:
     persistent_notification.async_create(
         hass, notification_msg, "Login attempt failed", NOTIFICATION_ID_LOGIN
     )
-
     # Check if ban middleware is loaded
     if KEY_BAN_MANAGER not in request.app or request.app[KEY_LOGIN_THRESHOLD] < 1:
         return
@@ -202,7 +232,7 @@ async def process_wrong_login(request: Request) -> None:
     # Supervisor IP should never be banned
     if is_hassio(hass) and str(remote_addr) == get_supervisor_ip():
         return
-
+    _LOGGER.warning("attempts %d, threshold %d", request.app[KEY_FAILED_LOGIN_ATTEMPTS][remote_addr], request.app[KEY_LOGIN_THRESHOLD])
     if (
         request.app[KEY_FAILED_LOGIN_ATTEMPTS][remote_addr]
         >= request.app[KEY_LOGIN_THRESHOLD]
@@ -229,6 +259,7 @@ def process_success_login(request: Request) -> None:
     """
     app = request.app
     # Check if ban middleware is loaded
+    _LOGGER.info("process_success_login")
     if KEY_BAN_MANAGER not in app or app[KEY_LOGIN_THRESHOLD] < 1:
         return
 
@@ -262,44 +293,67 @@ class IpBanManager:
         self.hass = hass
         self.path = hass.config.path(IP_BANS_FILE)
         self.ip_bans_lookup: dict[IPv4Address | IPv6Address, IpBan] = {}
+        # add rfc 1918 local networks (excluding 192.168.0.0/16 in case user wants to ban a part of it)
+        self.allowed_networks: list[ip_network] = [ip_network("10.0.0.0/8"), ip_network("172.16.0.0/12")]
         self.banned_networks: list[ip_network] = []
         self.notify_bans: bool = True
         self.log_bans: bool = True
+        self.include_192_in_allowed_networks: bool = True
 
     async def async_load(
         self,
+        allowed_networks: list[ip_network],
         banned_networks: list[ip_network],
         log_banned_networks: bool,
         notify_banned_networks: bool,
+        include_192_in_allowed_networks: bool,
     ) -> None:
-        """Load the existing IP bans."""
-        self.banned_networks: list[ip_network]
         self.notify_bans = notify_banned_networks
         self.log_bans = log_banned_networks
-        supervisor_ip = get_supervisor_ip()
+        # add the 192 subnet according to rfc 1918 if the users wants it
+        self.include_192_in_allowed_networks = include_192_in_allowed_networks
+        if self.include_192_in_allowed_networks:
+            self.allowed_networks.append(ip_network("192.168.0.0/16"))
+        
+        supervisor_ip_address: IPv4Address
+        try:
+            supervisor_ip_address = ip_address(get_supervisor_ip())
+        except Exception as ex:
+            _LOGGER.warning("Unable to get supervisor ip address: %s", str(ex))
+        
+        """Load the allowed networks"""
+        for network in allowed_networks:
+            self.allowed_networks.append(network)
+
+        supervisor_protected: bool = False
+        for network in self.allowed_networks:
+            if supervisor_ip_address and supervisor_ip_address in network:
+                _LOGGER.debug("Supervisor %s is in allowed network %s", supervisor_ip_address, network)
+                supervisor_protected = True
+                break
+
+        self.banned_networks: list[ip_network]
+        """Load the banned networks."""
         for network in banned_networks:
-            try:
-                network_ip_network = ip_network(network, strict=False)
-                # Prevent inadvertently banning the supervisor's network
-                if supervisor_ip and ip_address(supervisor_ip) in network_ip_network:
-                    _LOGGER.error(
-                        "Unable to ban network %s as it is used by the supervisor %s",
-                        network,
-                        supervisor_ip,
-                    )
-                else:
-                    self.banned_networks.append(network_ip_network)
-            except (AddressValueError, NetmaskValueError, ValueError) as err:
+            # Prevent inadvertently banning the supervisor's ip address if not already protected
+            # by the allowed networks
+            if (not supervisor_protected) and supervisor_ip_address and supervisor_ip_address in network:
+                # the unprotected supervisor is in this banned network
+                # so we can't risk loading this banned network
                 _LOGGER.error(
-                    "Error in banned network %s: %s. Check configuration",
+                    "Unable to ban network %s as it is used by the supervisor %s",
                     network,
-                    str(err),
+                    supervisor_ip_address,
                 )
+            else:
+                self.banned_networks.append(network)
         _LOGGER.info(
-            "Banned networks: %s, log %s, notify %s",
-            str(self.banned_networks),
+            "Allowed networks: %s. Banned networks: %s, log bans %s, notify bans %s, allow 192.168.x.x %s",
+            self.allowed_networks,
+            self.banned_networks,
             self.log_bans,
             self.notify_bans,
+            self.include_192_in_allowed_networks,
         )
 
         try:
