@@ -101,4 +101,4 @@ If you use the allowed_networks list and ban the entire internet you could lock 
 
 ## Home Assistant Versions
 
-Tested with 2026.4.0 - > 2026.5.4
+Tested with 2026.4.0 - > 2026.6.1
