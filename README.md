@@ -1,3 +1,13 @@
+# DO NOT USE FOR FUTURE INSTALLATIONS
+
+There's now a far better implementation at https://github.com/Wheemer/ip-ban-manager
+
+It has HACS installation and the failed login ban for an allowed subnet can optionally be enabled (and works).
+
+It's also fully UI configurable and does not need a restart after config changes
+
+Well done to @wheemer
+
 # Home-Assistant-http
 
 Custom component for Home Assistant to augment the core http component functionality.
